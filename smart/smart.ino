@@ -35,7 +35,7 @@ const int conf_2_pin=18;
 
 int analog_data[16][averaging+1];
 
-int TSMs[2][3]={{A10, A9, A8},{A11, A7, A6}};
+int TSMs[4][3]={{10, 9, 8},{5, 7, 6},{11,2,3},{4,0,1}};
 OneWire ds18x20[]={OneWire(21),OneWire(20), OneWire(19)};
 DallasTemperature sensor[oneWirePinsCount];
 
@@ -54,10 +54,16 @@ void readAnalog(){
     analog_data[i][averaging]=S>>shift;
   }
 }
+void setErr(int i_disp){
+  int i_7;
+  for (int i=0; i<3; i++){
+    i_7=displays[i_disp][i];
+    lc.setDigit(i_7/8,i_7%8,14,false);
+  }
+}
 
 void setInt(int val, int i_disp) {
   int i_7, i_v;
-  Serial.println(val);
   for (int i=0; i<3; i++){
     i_7=displays[i_disp][i];
     i_v=val%10;
@@ -68,7 +74,6 @@ void setInt(int val, int i_disp) {
 
 void setFloat(int val, int i_disp) {
   int i_7, i_v;
-  Serial.println(val);
   for (int i=0; i<3; i++){
     i_7=displays[i_disp][i];
     i_v=val%10;
@@ -99,12 +104,11 @@ void configTSM_byD(int i_tsm){
   float u_tsm0;
   int temp=temps[0];
   for (int i=0; i<tsmCount; i++){
-    u_p=analogRead(TSMs[i][0]);
-    u_tsm=analogRead(TSMs[i][2])-analogRead(TSMs[i][1]);
+    u_p=analog_data[TSMs[i][0]][averaging];
+    u_tsm=analog_data[TSMs[i][2]][averaging]-analog_data[TSMs[i][1]][averaging];
     u_tsm0=u_tsm/(1+temps[0]*tks);
     TSM_ratios[i]=u_tsm0/u_p;
   }
-  
 }
 
 
@@ -177,13 +181,14 @@ void setup() {
     sensor[i].begin();
     if (sensor[i].getAddress(deviceAddress, 0)) sensor[i].setResolution(deviceAddress, 10);
   }
+  if (check_conf_timeout()){
+    conf_var_res();
+  }
 }
 
 
 void loop() {
-  if (check_conf_timeout()){
-    conf_var_res();
-  }
+    
   getDallasTemps();
     for (int i=0; i<pressureCount; i++) {
       pressures[i]=analogRead(A13+i);
@@ -196,6 +201,7 @@ void loop() {
         setInt(int(temps[i]), temps_map[i]);
       }
       if (pressures[i]< 100){
+        //setErr(press_map[i]);
         setFloat(int(pressures[i]*10), press_map[i]);
       }else{
         setInt(int(pressures[i]), press_map[i]);
