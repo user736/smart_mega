@@ -21,7 +21,7 @@ int displays[12][3]={
 {25,26,27}};
 
 const int oneWirePinsCount=3;
-const int tsmCount=2;
+const int tsmCount=4;
 const int pressureCount=3;
 const float tks=0.428; //percent
 float TSM_ratios[2]={1, 1};
@@ -35,12 +35,21 @@ const int conf_2_pin=18;
 
 int analog_data[16][averaging+1];
 
-int TSMs[4][3]={{10, 9, 8},{5, 7, 6},{11,2,3},{4,0,1}};
+int TSMs[4][3]={{10, 9, 8},{4, 7, 6},{11,2,3},{5,1,0}};
 OneWire ds18x20[]={OneWire(21),OneWire(20), OneWire(19)};
 DallasTemperature sensor[oneWirePinsCount];
 
 unsigned long counter=0;
 unsigned long measure_n=0;
+
+void readAnalogCount(int c){
+  for (int j=averaging-c; j<averaging; j++){
+    for (int i=0; i<16; i++){
+      analog_data[i][j]=analogRead(A0+i);
+    }
+  }
+  readAnalog();
+}
 
 void readAnalog(){
   for (int i=0; i<16; i++){
@@ -64,6 +73,9 @@ void setErr(int i_disp){
 
 void setInt(int val, int i_disp) {
   int i_7, i_v;
+  if (val>999){
+    val=999;
+  }
   for (int i=0; i<3; i++){
     i_7=displays[i_disp][i];
     i_v=val%10;
@@ -143,8 +155,8 @@ void conf_var_res(){
   while(not(check_conf_timeout())){
     readAnalog();
     for (int i=0; i<12; i++){
-      //setInt(analogRead(A0+i),i);
-      setInt(analog_data[i][averaging],i);
+      setInt(analogRead(A14),i);
+      //setInt(analog_data[i+4][averaging],i);
     }
   }
 }
@@ -182,16 +194,27 @@ void setup() {
     if (sensor[i].getAddress(deviceAddress, 0)) sensor[i].setResolution(deviceAddress, 10);
   }
   if (check_conf_timeout()){
+    //readAnalogCount(averaging);
     conf_var_res();
+    while (not(check_conf_timeout())){
+      for (int i=0; i<12; i++){
+        setInt(i,i);
+      }
+      delay(1000);
+    }
+    readAnalogCount(averaging);
+    for (int i=0; i<tsmCount; i++){
+      configTSM_byD(i);
+    }
   }
 }
 
 
 void loop() {
-    
+  readAnalog();  
   getDallasTemps();
     for (int i=0; i<pressureCount; i++) {
-      pressures[i]=analogRead(A13+i);
+      pressures[i]=analog_data[12+i][averaging];
     }
     ++measure_n;
     for (int i=0; i<5; i++){
@@ -201,8 +224,8 @@ void loop() {
         setInt(int(temps[i]), temps_map[i]);
       }
       if (pressures[i]< 100){
-        //setErr(press_map[i]);
-        setFloat(int(pressures[i]*10), press_map[i]);
+        setErr(press_map[i]);
+        //setFloat(int(pressures[i]*10), press_map[i]);
       }else{
         setInt(int(pressures[i]), press_map[i]);
       }
