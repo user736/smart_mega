@@ -22,7 +22,7 @@ int displays[12][3]={
 
 const int oneWirePinsCount=3;
 const int tsmCount=4;
-const int pressureCount=3;
+const int pressureCount=4;
 const float tks=0.428; //percent
 float TSM_ratios[2]={1, 1};
 float temps[]={0,0,0,0,0};
@@ -32,6 +32,7 @@ int press_map[]={5, 7, 1, 6, 2};
 const int conf_m_pin=17;
 const int conf_1_pin=16;
 const int conf_2_pin=18;
+boolean temp_source=true;
 
 int analog_data[16][averaging+1];
 
@@ -155,8 +156,8 @@ void conf_var_res(){
   while(not(check_conf_timeout())){
     readAnalog();
     for (int i=0; i<12; i++){
-      setInt(analogRead(A14),i);
-      //setInt(analog_data[i+4][averaging],i);
+      //setInt(analogRead(A14),i);
+      setInt(analog_data[i][averaging],i);
     }
   }
 }
@@ -194,14 +195,8 @@ void setup() {
     if (sensor[i].getAddress(deviceAddress, 0)) sensor[i].setResolution(deviceAddress, 10);
   }
   if (check_conf_timeout()){
-    //readAnalogCount(averaging);
+    readAnalogCount(averaging);
     conf_var_res();
-    while (not(check_conf_timeout())){
-      for (int i=0; i<12; i++){
-        setInt(i,i);
-      }
-      delay(1000);
-    }
     readAnalogCount(averaging);
     for (int i=0; i<tsmCount; i++){
       configTSM_byD(i);
@@ -211,8 +206,15 @@ void setup() {
 
 
 void loop() {
-  readAnalog();  
-  getDallasTemps();
+  readAnalog(); 
+  if (check_conf_timeout()){
+     temp_source = not(temp_source);
+  }
+  if (temp_source){
+    get_TSM_temps();
+  }else{
+    getDallasTemps();
+  }
     for (int i=0; i<pressureCount; i++) {
       pressures[i]=analog_data[12+i][averaging];
     }
