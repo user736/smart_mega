@@ -1,6 +1,8 @@
 #define averaging 16
 #define  shift  4
 
+
+#include <EEPROM.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "LedControl.h"
@@ -24,7 +26,7 @@ const int oneWirePinsCount=3;
 const int tsmCount=4;
 const int pressureCount=4;
 const float tks=0.428; //percent
-float TSM_ratios[2]={1, 1};
+float TSM_ratios[4]={1, 1, 1, 1};
 float temps[]={0,0,0,0,0};
 float pressures[]={0,0,0,0,0};
 int temps_map[]={11, 8, 10, 4, 9};
@@ -42,6 +44,21 @@ DallasTemperature sensor[oneWirePinsCount];
 
 unsigned long counter=0;
 unsigned long measure_n=0;
+
+// чтение
+float EEPROM_float_read(int addr) {    
+  byte raw[4];
+  for(byte i = 0; i < 4; i++) raw[i] = EEPROM.read(addr+i);
+  float &num = (float&)raw;
+  return num;
+}
+
+// запись
+void EEPROM_float_write(int addr, float num) {
+  byte raw[4];
+  (float&)raw = num;
+  for(byte i = 0; i < 4; i++) EEPROM.write(addr+i, raw[i]);
+}
 
 void readAnalogCount(int c){
   for (int j=averaging-c; j<averaging; j++){
@@ -129,10 +146,12 @@ int get_TSM_temps(){
     int u_p, u_tsm;
     float u_tsm0;
     for (int i=0; i<tsmCount; i++) {
-    u_p=analogRead(TSMs[i][0]);
-    u_tsm=analogRead(TSMs[i][2])-analogRead(TSMs[i][1]);
+    u_p=analog_data[TSMs[i][0]][averaging];
+    u_tsm=analog_data[TSMs[i][2]][averaging]-analog_data[TSMs[i][1]][averaging];
     u_tsm0=u_p*TSM_ratios[i];
     temps[i]=(u_tsm-u_tsm0)/(tks*u_tsm0);
+    Serial.print(i);
+    Serial.print(" ");
     Serial.print(u_p);
     Serial.print(" ");
     Serial.print(u_tsm);
@@ -200,6 +219,13 @@ void setup() {
     readAnalogCount(averaging);
     for (int i=0; i<tsmCount; i++){
       configTSM_byD(i);
+    }
+    for (int i=0; i<tsmCount; i++){
+      EEPROM_float_write(i*4, TSM_ratios[i]);
+    }
+  }else{
+    for (int i=0; i<tsmCount; i++){
+      TSM_ratios[i]=EEPROM_float_read(i*4);
     }
   }
 }
