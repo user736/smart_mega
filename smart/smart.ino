@@ -45,8 +45,12 @@ const int pressureCount=4;
 const float tks=0.00428;
 float TSM_ratios[4]={1, 1, 1, 1};
 float temps[]={0,0,0,0,0};
-int max_temps[]={50,50,50,50};
+float err_temps[]={0,0,0,0,0};
+int max_temps[]={50,50,50,50,50};
 float pressures[]={0,0,0,0,0};
+float err_pressures[]={0,0,0,0,0};
+int max_pressures[]={512,512,512,512,512};
+int leds[]={1,1,1,1,1,1,1,1,1,1,1,1};
 int temps_map[]={11, 8, 10, 4, 9};
 int press_map[]={5, 7, 1, 6, 2};
 const int conf_m_pin=17;
@@ -178,20 +182,12 @@ int get_TSM_temps(){
     u_tsm=analog_data[TSMs[i][2]][averaging]-analog_data[TSMs[i][1]][averaging];
     u_tsm0=u_p*TSM_ratios[i];
     temps[i]=(u_tsm-u_tsm0)/(tks*u_tsm0);
-    Serial.print(i);
-    Serial.print(" ");
-    Serial.print(u_p);
-    Serial.print(" ");
-    Serial.print(u_tsm);
-    Serial.print(" ");
-    Serial.print(u_tsm0);
-    Serial.println(" ");
     }
 }
 
-boolean check_conf_timeout(){
-  for(int i=0; i<30; i++){
-      if (digitalRead(conf_m_pin)){
+boolean check_conf_timeout(int but, int timeout){
+  for(int i=0; i<timeout; i++){
+      if (digitalRead(but)){
         return false;
       }
       delay(100);
@@ -200,7 +196,7 @@ boolean check_conf_timeout(){
   }
 
 void conf_var_res(){
-  while(not(check_conf_timeout())){
+  while(not(check_conf_timeout(conf_m_pin, 15))){
     readAnalog();
     for (int i=0; i<12; i++){
       //setInt(analogRead(A14),i);
@@ -208,6 +204,35 @@ void conf_var_res(){
     }
   }
 }
+
+boolean displayData()    {
+    boolean res=true;
+    for (int i=0; i<5; i++){
+      if (temps[i]>max_temps[i]){
+        res=false;
+        leds[temps_map[i]]=0;
+      }
+      if (temps[i]< 100){
+        setFloat(int(temps[i]*10), temps_map[i]);
+      }else{
+        setInt(int(temps[i]), temps_map[i]);
+      }
+
+      if (pressures[i]>max_pressures[i]){
+        res=false;
+        leds[press_map[i]]=0;
+      }
+      if (pressures[i]< 100){
+        setErr(press_map[i]);
+        //setFloat(int(pressures[i]*10), press_map[i]);
+      }else{
+        setInt(int(pressures[i]), press_map[i]);
+      }
+    }
+    setInt(counter%1000,0);
+    setInt(counter/1000,3);
+    return res;
+  }
 
 void setup() {
 
@@ -246,8 +271,8 @@ void setup() {
     sensor[i].begin();
     if (sensor[i].getAddress(deviceAddress, 0)) sensor[i].setResolution(deviceAddress, 10);
   }
-  if (check_conf_timeout()){
-    readAnalogCount(averaging);
+  if (check_conf_timeout(conf_m_pin, 15)){
+
     conf_var_res();
     readAnalogCount(averaging);
     for (int i=0; i<tsmCount; i++){
@@ -261,6 +286,8 @@ void setup() {
       TSM_ratios[i]=EEPROM_float_read(i*4);
     }
   }
+  readAnalogCount(averaging);
+  is_ok = displayData();
 }
 
 
@@ -270,7 +297,7 @@ void loop() {
   digitalWrite(10,is_ok);
   digitalWrite(12,is_ok);
   readAnalog(); 
-  if (check_conf_timeout()){
+  if (check_conf_timeout(conf_m_pin,15)){
      temp_source = not(temp_source);
   }
   if (temp_source){
@@ -282,27 +309,11 @@ void loop() {
       pressures[i]=analog_data[12+i][averaging];
     }
     ++measure_n;
-    for (int i=0; i<5; i++){
-      if (temps[i]< 100){
-        setFloat(int(temps[i]*10), temps_map[i]);
-      }else{
-        setInt(int(temps[i]), temps_map[i]);
-      }
-      if (pressures[i]< 100){
-        setErr(press_map[i]);
-        //setFloat(int(pressures[i]*10), press_map[i]);
-      }else{
-        setInt(int(pressures[i]), press_map[i]);
-      }
+
+    is_ok = displayData() && is_ok;
+    for (int i=0; i<12; i++){
+      setLedst(i,leds[i]);
     }
-    setInt(counter%1000,0);
-    setInt(counter/1000,3);
-    i_led+=1;
-    if (i_led>=12){
-      i_led=0;
-      is_ok=not(is_ok);
-    }
-    setLedst(i_led, is_ok);
-    delay(1000);
+    //  delay(1000);
 }
 
