@@ -1,5 +1,5 @@
-#define averaging 16
-#define  shift  4
+#define averaging 128
+#define  shift  7
 
 
 #include <EEPROM.h>
@@ -7,6 +7,8 @@
 #include <DallasTemperature.h>
 #include "LedControl.h"
 LedControl lc=LedControl(25,22,23,6);
+
+int i_led;
 
 int displays[12][3]={
 {0, 1, 2},
@@ -22,12 +24,28 @@ int displays[12][3]={
 {29,30,31},
 {25,26,27}};
 
+int st_leds[12][2]={
+  {0,  7},
+  {8, 15},
+  {16,23},
+  {6,  5},
+  {14,13},
+  {22,21},
+  {4,  3},
+  {12,11},
+  {20,19},
+  {2,  1},
+  {10, 9},
+  {18,17}
+};
+
 const int oneWirePinsCount=3;
 const int tsmCount=4;
 const int pressureCount=4;
-const float tks=0.428; //percent
+const float tks=0.00428;
 float TSM_ratios[4]={1, 1, 1, 1};
 float temps[]={0,0,0,0,0};
+int max_temps[]={50,50,50,50};
 float pressures[]={0,0,0,0,0};
 int temps_map[]={11, 8, 10, 4, 9};
 int press_map[]={5, 7, 1, 6, 2};
@@ -35,6 +53,7 @@ const int conf_m_pin=17;
 const int conf_1_pin=16;
 const int conf_2_pin=18;
 boolean temp_source=true;
+boolean is_ok=false;
 
 int analog_data[16][averaging+1];
 
@@ -72,7 +91,7 @@ void readAnalogCount(int c){
 void readAnalog(){
   for (int i=0; i<16; i++){
     int data=analogRead(A0+i);
-    int S=data;
+    long S=data;
     for (int j=0; j<averaging-1; j++){
       analog_data[i][j]=analog_data[i][j+1];
       S+=analog_data[i][j];
@@ -81,6 +100,15 @@ void readAnalog(){
     analog_data[i][averaging]=S>>shift;
   }
 }
+
+void setLedst(int i_disp, int st){
+  int id;
+  id = st_leds[i_disp][st];
+  lc.setLed(4, 4+id/8, id%8, true);
+  id = st_leds[i_disp][1-st];
+  lc.setLed(4, 4+id/8, id%8, false);
+}
+
 void setErr(int i_disp){
   int i_7;
   for (int i=0; i<3; i++){
@@ -189,12 +217,17 @@ void setup() {
   pinMode(8, OUTPUT);
   pinMode(10, OUTPUT);
   pinMode(12, OUTPUT);
+  digitalWrite(8,is_ok);
+  digitalWrite(10,is_ok);
+  digitalWrite(12,is_ok);
   pinMode(conf_m_pin, INPUT_PULLUP);
   pinMode(conf_1_pin, INPUT_PULLUP);
   pinMode(conf_2_pin, INPUT_PULLUP);
   
   Serial.begin(9600);
   Serial.println("Smartex dev");
+
+  analogReference(INTERNAL2V56);
   
  //Led displays initialization 
  for (int i=0; i<6; i++){
@@ -232,6 +265,10 @@ void setup() {
 
 
 void loop() {
+
+  digitalWrite(8,is_ok);
+  digitalWrite(10,is_ok);
+  digitalWrite(12,is_ok);
   readAnalog(); 
   if (check_conf_timeout()){
      temp_source = not(temp_source);
@@ -260,5 +297,12 @@ void loop() {
     }
     setInt(counter%1000,0);
     setInt(counter/1000,3);
+    i_led+=1;
+    if (i_led>=12){
+      i_led=0;
+      is_ok=not(is_ok);
+    }
+    setLedst(i_led, is_ok);
+    delay(1000);
 }
 
