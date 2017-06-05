@@ -217,7 +217,7 @@ boolean displayData(boolean actual)    {
         temp=err_temps[i];
         pressure=err_pressures[i];
       }
-      /*if (temp>max_temps[i]){
+      /*if (actual&&temp>max_temps[i]){
         res=false;
         leds[temps_map[i]]=0;
       }*/
@@ -227,7 +227,7 @@ boolean displayData(boolean actual)    {
         setInt(int(temps), temps_map[i]);
       }
 
-      if (pressure>max_pressures[i]){
+      if (actual&&pressure>max_pressures[i]){
         res=false;
         leds[press_map[i]]=0;
       }
