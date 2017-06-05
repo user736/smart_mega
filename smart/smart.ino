@@ -54,8 +54,8 @@ int leds[]={1,1,1,1,1,1,1,1,1,1,1,1};
 int temps_map[]={11, 8, 10, 4, 9};
 int press_map[]={5, 7, 1, 6, 2};
 const int conf_m_pin=17;
-const int conf_1_pin=16;
-const int conf_2_pin=18;
+const int reset_pin=16;
+const int check_pin=18;
 boolean temp_source=true;
 boolean is_ok=false;
 
@@ -66,6 +66,7 @@ OneWire ds18x20[]={OneWire(21),OneWire(20), OneWire(19)};
 DallasTemperature sensor[oneWirePinsCount];
 
 unsigned long counter=0;
+unsigned long err_counter=0;
 unsigned long measure_n=0;
 
 // чтение
@@ -205,34 +206,62 @@ void conf_var_res(){
   }
 }
 
-boolean displayData()    {
+boolean displayData(boolean actual)    {
     boolean res=true;
+    float temp, pressure;
     for (int i=0; i<5; i++){
-      if (temps[i]>max_temps[i]){
+      if (actual){
+        temp=temps[i];
+        pressure=pressures[i];
+      }else{
+        temp=err_temps[i];
+        pressure=err_pressures[i];
+      }
+      /*if (temp>max_temps[i]){
         res=false;
         leds[temps_map[i]]=0;
-      }
-      if (temps[i]< 100){
-        setFloat(int(temps[i]*10), temps_map[i]);
+      }*/
+      if (temp< 100){
+        setFloat(int(temp*10), temps_map[i]);
       }else{
-        setInt(int(temps[i]), temps_map[i]);
+        setInt(int(temps), temps_map[i]);
       }
 
-      if (pressures[i]>max_pressures[i]){
+      if (pressure>max_pressures[i]){
         res=false;
         leds[press_map[i]]=0;
       }
-      if (pressures[i]< 100){
+      if (pressure< 100){
         setErr(press_map[i]);
         //setFloat(int(pressures[i]*10), press_map[i]);
       }else{
-        setInt(int(pressures[i]), press_map[i]);
+        setInt(int(pressure), press_map[i]);
       }
     }
-    setInt(counter%1000,0);
-    setInt(counter/1000,3);
+    if (actual){
+      setInt(counter%1000,0);
+      setInt(counter/1000,3);
+    }else{
+      setInt(err_counter%1000,0);
+      setInt(err_counter/1000,3);
+    }
     return res;
   }
+
+void save_err(){
+  for (int i=0; i<5; i++){
+    err_temps[i]=temps[i];
+    err_pressures[i]=pressures[i];
+    err_counter=counter;
+  }
+}
+
+void reset_error(){
+  for (int i=0; i<12; i++){
+    leds[i]=1;
+  }
+  is_ok=true;
+}
 
 void setup() {
 
@@ -246,8 +275,8 @@ void setup() {
   digitalWrite(10,is_ok);
   digitalWrite(12,is_ok);
   pinMode(conf_m_pin, INPUT_PULLUP);
-  pinMode(conf_1_pin, INPUT_PULLUP);
-  pinMode(conf_2_pin, INPUT_PULLUP);
+  pinMode(check_pin, INPUT_PULLUP);
+  pinMode(reset_pin, INPUT_PULLUP);
   
   Serial.begin(9600);
   Serial.println("Smartex dev");
@@ -287,7 +316,7 @@ void setup() {
     }
   }
   readAnalogCount(averaging);
-  is_ok = displayData();
+  is_ok = displayData(true);
 }
 
 
@@ -305,12 +334,27 @@ void loop() {
   }else{
     getDallasTemps();
   }
-    for (int i=0; i<pressureCount; i++) {
-      pressures[i]=analog_data[12+i][averaging];
+  for (int i=0; i<pressureCount; i++) {
+    pressures[i]=analog_data[12+i][averaging];
+  }
+  ++measure_n;
+  boolean disp_res;
+  if (digitalRead(check_pin)){
+    disp_res=displayData(true);
+  }else
+  {
+    disp_res=displayData(false);
+  }
+  if (is_ok){
+    if (!disp_res){
+      is_ok =  false;
+      save_err();
     }
-    ++measure_n;
-
-    is_ok = displayData() && is_ok;
+  }else{
+    if (check_conf_timeout(reset_pin,15)){
+      reset_error();
+    }
+  }
     for (int i=0; i<12; i++){
       setLedst(i,leds[i]);
     }
