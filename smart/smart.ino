@@ -1,5 +1,6 @@
 #define averaging 128
 #define  shift  7
+#define conf_m_pin 6
 
 
 #include <EEPROM.h>
@@ -39,6 +40,16 @@ int st_leds[12][2]={
   {18,17}
 };
 
+int b_leds[]={1,2,3,4,5,6,7,8,11,12,13,14,15,16,17,18,19,20,21,22,23};
+int b_leds_v[]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1};
+
+int button_in[]={36,37,42,43};
+int button_out[]={15,16,17,18};
+
+int butt_leds_map[]={19,7,0,17,20,13,0,16,10,12,0,15,6,18,0,14};
+
+int buttons_val;
+
 const int oneWirePinsCount=3;
 const int tsmCount=4;
 const int pressureCount=4;
@@ -53,11 +64,14 @@ int max_pressures[]={512,512,512,512,512};
 int leds[]={1,1,1,1,1,1,1,1,1,1,1,1};
 int temps_map[]={11, 8, 10, 4, 9};
 int press_map[]={5, 7, 1, 6, 2};
-const int conf_m_pin=17;
-const int reset_pin=16;
-const int check_pin=18;
+//const int reset_pin=16;
+//const int check_pin=18;
 boolean temp_source=true;
 boolean is_ok=false;
+boolean heating = false;
+boolean compressor = false;
+boolean separator = false;
+boolean start_approved = false;
 
 int analog_data[16][averaging+1];
 
@@ -112,6 +126,10 @@ void setLedst(int i_disp, int st){
   lc.setLed(4, 4+id/8, id%8, true);
   id = st_leds[i_disp][1-st];
   lc.setLed(4, 4+id/8, id%8, false);
+}
+
+void setLedsb(int i_led, int st){
+  lc.setLed(5,i_led/8,i_led%8, st);
 }
 
 void setErr(int i_disp){
@@ -187,12 +205,17 @@ int get_TSM_temps(){
 }
 
 boolean check_conf_timeout(int but, int timeout){
+  int i_in=but/4;
+  int i_out=but%4;
+  digitalWrite(button_in[i_in],0);
   for(int i=0; i<timeout; i++){
-      if (digitalRead(but)){
+      if (digitalRead(button_out[i_out])){
+        digitalWrite(button_in[i_in],1);
         return false;
       }
       delay(100);
     }
+    digitalWrite(button_in[i_in],1);
     return true;
   }
 
@@ -200,7 +223,6 @@ void conf_var_res(){
   while(not(check_conf_timeout(conf_m_pin, 15))){
     readAnalog();
     for (int i=0; i<12; i++){
-      //setInt(analogRead(A14),i);
       setInt(analog_data[i][averaging],i);
     }
   }
@@ -263,6 +285,98 @@ void reset_error(){
   is_ok=true;
 }
 
+int read_buttons(){
+  int res=0;
+  int i_butt=0;
+  for (int i=0; i<4;i++){
+    digitalWrite(button_in[i], 0);
+    for (int j=0; j<4; j++){
+      i_butt=i*4+j;
+      res+= (1-digitalRead(button_out[j]))<<i_butt;
+    }
+    digitalWrite(button_in[i], 1);
+  }
+  return res;
+}
+
+void indicate_buttons(int val){
+  for (int i=0; i<16; i++){
+    if (val & (1<<i)){
+      setLedsb(b_leds[butt_leds_map[i]],true);
+    }
+  }
+}
+
+void reset_indication(){
+  for (int i=0; i<21; i++){
+    setLedsb(b_leds[i],b_leds_v[i]);
+  }
+}
+
+void switch_b_status(int b1, int b2){
+  b_leds_v[b1]=1;
+  b_leds_v[b2]=0;
+  
+}
+
+void handle_buttons(int val){
+  boolean pr_butt = false;
+  if (val& (1<<4)){
+    heating=false;
+    switch_b_status(20,10);
+  }
+  if (val& (1<<13)){
+    compressor=false;
+    switch_b_status(18,19);
+  }
+  if (val& (1<<7)){
+    separator=false;
+    switch_b_status(16,17);
+  }
+  
+  if (val& (1<<8)){
+    if (is_ok){
+      heating=true;
+      switch_b_status(10,20);
+    }
+  }
+  if (val & (1<<0)){
+    if (is_ok){
+      compressor=true;
+      switch_b_status(19,18);
+    }
+  }
+  if (val & (1<<3)){
+    if (is_ok){
+      separator=true;
+      switch_b_status(17,16);
+    }
+  }
+  if (val & (1<<15)){
+    if (is_ok){
+      start_approved=true;
+      switch_b_status(14,15);
+    }
+  }
+  if (val & (1<<11)){
+    if (is_ok){
+      start_approved=false;
+      switch_b_status(15,14);
+    }
+  }
+  if (val & (1<<9)){
+    for (int i=0; i<6; i++){
+      for (int j=0; j<8; j++){
+        lc.setDigit(i,j,8,true);
+      }
+    }
+    while(check_conf_timeout(9, 10)){
+      
+    }
+    
+  }
+}
+
 void setup() {
 
   attachInterrupt (0, int_handler, RISING);
@@ -274,9 +388,12 @@ void setup() {
   digitalWrite(8,is_ok);
   digitalWrite(10,is_ok);
   digitalWrite(12,is_ok);
-  pinMode(conf_m_pin, INPUT_PULLUP);
-  pinMode(check_pin, INPUT_PULLUP);
-  pinMode(reset_pin, INPUT_PULLUP);
+  for (int i=0; i<4; i++){
+    pinMode(button_out[i], INPUT_PULLUP);
+    pinMode(button_in[i], OUTPUT);
+  }
+  //pinMode(check_pin, INPUT_PULLUP);
+  //pinMode(reset_pin, INPUT_PULLUP);
   
   Serial.begin(9600);
   Serial.println("Smartex dev");
@@ -295,7 +412,6 @@ void setup() {
   // Start up the library on all defined bus-wires
   DeviceAddress deviceAddress;
   for (int i=0; i<oneWirePinsCount; i++) {;
-    //ds18x20[i].setPin(oneWirePins[i]);
     sensor[i].setOneWire(&ds18x20[i]);
     sensor[i].begin();
     if (sensor[i].getAddress(deviceAddress, 0)) sensor[i].setResolution(deviceAddress, 10);
@@ -319,12 +435,14 @@ void setup() {
   is_ok = displayData(true);
 }
 
-
 void loop() {
-
-  digitalWrite(8,is_ok);
-  digitalWrite(10,is_ok);
-  digitalWrite(12,is_ok);
+  buttons_val=read_buttons();
+  Serial.println(buttons_val); //should be deleted in prod
+  if (buttons_val){
+    indicate_buttons(buttons_val);
+  }else{
+    reset_indication();
+  }
   readAnalog(); 
   if (check_conf_timeout(conf_m_pin,15)){
      temp_source = not(temp_source);
@@ -338,8 +456,13 @@ void loop() {
     pressures[i]=analog_data[12+i][averaging];
   }
   ++measure_n;
+  
+  handle_buttons(buttons_val);
+  
   boolean disp_res;
-  if (digitalRead(check_pin)){
+  
+  // +++++++++Check error values ++++++++++
+  if (not(buttons_val & (1<<1))){
     disp_res=displayData(true);
   }else
   {
@@ -351,13 +474,17 @@ void loop() {
       save_err();
     }
   }else{
-    if (check_conf_timeout(reset_pin,15)){
+    
+    // ++++++++ Reset Button pressed ++++++++++
+    if (buttons_val & (1<<5)){
       reset_error();
     }
   }
     for (int i=0; i<12; i++){
       setLedst(i,leds[i]);
     }
-    //  delay(1000);
+  digitalWrite(8,is_ok && heating);
+  digitalWrite(10,is_ok && compressor && start_approved);
+  digitalWrite(12,is_ok && separator && start_approved);
 }
 
