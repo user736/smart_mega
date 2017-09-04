@@ -41,7 +41,7 @@ int st_leds[12][2]={
 };
 
 int b_leds[]={1,2,3,4,5,6,7,8,11,12,13,14,15,16,17,18,19,20,21,22,23};
-int b_leds_v[]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1};
+int b_leds_v[]={0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1};
 
 int button_in[]={36,37,42,43};
 int button_out[]={15,16,17,18};
@@ -58,9 +58,12 @@ float TSM_ratios[4]={1, 1, 1, 1};
 float temps[]={0,0,0,0,0};
 float err_temps[]={0,0,0,0,0};
 int max_temps[]={50,50,50,50,50};
+int min_start_temps[]={25,0,0,0,0};
+int skipped_temps[]={0,0,0,0,1};
 float pressures[]={0,0,0,0,0};
 float err_pressures[]={0,0,0,0,0};
 int max_pressures[]={512,512,512,512,512};
+int skipped_press[]={0,0,0,0,1};
 int leds[]={1,1,1,1,1,1,1,1,1,1,1,1};
 int temps_map[]={11, 8, 10, 4, 9};
 int press_map[]={5, 7, 1, 6, 2};
@@ -96,6 +99,18 @@ void EEPROM_float_write(int addr, float num) {
   byte raw[4];
   (float&)raw = num;
   for(byte i = 0; i < 4; i++) EEPROM.write(addr+i, raw[i]);
+}
+
+void set_is_ok(boolean status){
+  if (is_ok !=status){
+    if (status){
+      switch_b_status(2, 3);
+    }else
+    {
+      switch_b_status(3, 2);
+    }
+    is_ok = status;
+  }
 }
 
 void readAnalogCount(int c){
@@ -239,25 +254,38 @@ boolean displayData(boolean actual)    {
         temp=err_temps[i];
         pressure=err_pressures[i];
       }
-      /*if (actual&&temp>max_temps[i]){
+      if (not(skipped_temps[i])){
+      if (actual&&temp>max_temps[i]){
         res=false;
         leds[temps_map[i]]=0;
-      }*/
-      if (temp< 100){
+      }
+      if (temp<-50){
+        setErr(temps_map[i]);
+        res=false;
+        skipped_temps[i]=1;
+        leds[temps_map[i]]=0;
+      }
+      else if (temp< 100){
         setFloat(int(temp*10), temps_map[i]);
       }else{
         setInt(int(temps), temps_map[i]);
       }
+      }
 
+      if (not(skipped_press[i])){
       if (actual&&pressure>max_pressures[i]){
         res=false;
         leds[press_map[i]]=0;
       }
       if (pressure< 100){
         setErr(press_map[i]);
+        res=false;
+        skipped_press[i]=1;
+        leds[press_map[i]]=0;
         //setFloat(int(pressures[i]*10), press_map[i]);
       }else{
         setInt(int(pressure), press_map[i]);
+      }
       }
     }
     if (actual){
@@ -279,10 +307,15 @@ void save_err(){
 }
 
 void reset_error(){
-  for (int i=0; i<12; i++){
-    leds[i]=1;
+  for (int i=0; i<5; i++){
+    if (not(skipped_temps[i])){
+      leds[temps_map[i]]=1;
+    }
+    if (not(skipped_press[i])){
+      leds[press_map[i]]=1;
+    }
   }
-  is_ok=true;
+  set_is_ok(true);
 }
 
 int read_buttons(){
@@ -341,13 +374,13 @@ void handle_buttons(int val){
     }
   }
   if (val & (1<<0)){
-    if (is_ok){
+    if (is_ok && start_approved){
       compressor=true;
       switch_b_status(19,18);
     }
   }
   if (val & (1<<3)){
-    if (is_ok){
+    if (is_ok && start_approved){
       separator=true;
       switch_b_status(17,16);
     }
@@ -373,8 +406,17 @@ void handle_buttons(int val){
     while(check_conf_timeout(9, 10)){
       
     }
-    
   }
+}
+
+boolean check_start_cond(){
+  for (int i=0; i<5; i++){
+    if (not(skipped_temps[i]) && min_start_temps[i]>temps[i]){
+      return false;
+    }
+  }
+  switch_b_status(4, 5);
+  return true;
 }
 
 void setup() {
@@ -403,8 +445,8 @@ void setup() {
  //Led displays initialization 
  for (int i=0; i<6; i++){
     lc.shutdown(i,false);
-    /* Set the brightness to a medium values */
-    lc.setIntensity(i,8);
+    /* Set the brightness to a max values */
+    lc.setIntensity(i,15);
     /* and clear the display */
     lc.clearDisplay(i);
   }
@@ -432,10 +474,14 @@ void setup() {
     }
   }
   readAnalogCount(averaging);
-  is_ok = displayData(true);
+  set_is_ok( displayData(true));
 }
 
 void loop() {
+
+  if (not(start_approved)&&is_ok){
+    start_approved = check_start_cond();
+  }
   buttons_val=read_buttons();
   Serial.println(buttons_val); //should be deleted in prod
   if (buttons_val){
@@ -470,7 +516,7 @@ void loop() {
   }
   if (is_ok){
     if (!disp_res){
-      is_ok =  false;
+      set_is_ok(false);
       save_err();
     }
   }else{
@@ -486,5 +532,19 @@ void loop() {
   digitalWrite(8,is_ok && heating);
   digitalWrite(10,is_ok && compressor && start_approved);
   digitalWrite(12,is_ok && separator && start_approved);
+
+  if (Serial.available()>0){
+
+  char test= Serial.read();
+  if (test=='d'){
+  for (int i=0; i<4; i++) {
+    Serial.print(temps[i]);
+    Serial.print(" ");
+    Serial.print(pressures[i]);
+    Serial.print(" ");
+  }
+  Serial.print("\n");
+  }
+  }
 }
 
